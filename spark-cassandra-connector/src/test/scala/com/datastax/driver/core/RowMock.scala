@@ -6,6 +6,8 @@ import java.nio.ByteBuffer
 import java.util
 import java.util.{Date, UUID}
 
+import com.google.common.reflect.TypeToken
+
 class RowMock(columnSizes: Option[Int]*) extends Row {
   val bufs = columnSizes.map {
     case Some(size) => ByteBuffer.allocate(size)
@@ -91,4 +93,22 @@ class RowMock(columnSizes: Option[Int]*) extends Row {
   override def getTupleValue(i: Int): TupleValue = ???
 
   override def getUDTValue(i: Int): UDTValue = ???
+
+  override def getToken(i: Int): Token = ???
+
+  override def getToken(name: String): Token = ???
+
+  override def getPartitionKeyToken: Token = ???
+
+  override def getList[T](name: String, elementsType: TypeToken[T]): util.List[T] = ???
+
+  override def getMap[K, V](name: String, keysType: TypeToken[K], valuesType: TypeToken[V]): util.Map[K, V] = ???
+
+  override def getSet[T](name: String, elementsType: TypeToken[T]): util.Set[T] = ???
+
+  override def getList[T](i: Int, elementsType: TypeToken[T]): util.List[T] = ???
+
+  override def getMap[K, V](i: Int, keysType: TypeToken[K], valuesType: TypeToken[V]): util.Map[K, V] = ???
+
+  override def getSet[T](i: Int, elementsType: TypeToken[T]): util.Set[T] = ???
 }
