@@ -144,7 +144,7 @@ class CassandraTableScanRDD[R] private[connector](
     val session = connector.openSession()
     val partition = split.asInstanceOf[CassandraPartition]
     val tokenRanges = partition.tokenRanges
-    val metricsUpdater = InputMetricsUpdater(context, 20)
+    val metricsUpdater = InputMetricsUpdater(context, readConf)
 
     // Iterator flatMap trick flattens the iterator-of-iterator structure into a single iterator.
     // flatMap on iterator is lazy, therefore a query for the next token range is executed not earlier
@@ -178,10 +178,10 @@ object CassandraTableScanRDD {
   def apply[T](sc: SparkContext, keyspaceName: String, tableName: String)
               (implicit ct: ClassTag[T], rrf: RowReaderFactory[T]): CassandraTableScanRDD[T] =
     new CassandraTableScanRDD[T](
-      sc, CassandraConnector(sc.getConf), keyspaceName, tableName, AllColumns, CqlWhereClause.empty)
+      sc, CassandraConnector(sc.getConf), keyspaceName, tableName, readConf = ReadConf.fromSparkConf(sc.getConf))
 
   def apply[K, V](sc: SparkContext, keyspaceName: String, tableName: String)
                  (implicit keyCT: ClassTag[K], valueCT: ClassTag[V], rrf: RowReaderFactory[(K, V)]): CassandraTableScanRDD[(K, V)] =
     new CassandraTableScanRDD[(K, V)](
-      sc, CassandraConnector(sc.getConf), keyspaceName, tableName, AllColumns, CqlWhereClause.empty)
+      sc, CassandraConnector(sc.getConf), keyspaceName, tableName, readConf = ReadConf.fromSparkConf(sc.getConf))
 }

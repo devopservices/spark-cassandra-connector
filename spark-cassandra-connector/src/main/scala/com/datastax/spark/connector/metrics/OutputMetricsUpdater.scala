@@ -7,7 +7,7 @@ import com.datastax.spark.connector.writer.{RichStatement, WriteConf}
 import com.google.common.cache.LongAdderBuilder.LongAdderWrapper
 import org.apache.spark.executor.{DataWriteMethod, OutputMetrics}
 import org.apache.spark.metrics.CassandraConnectorSource
-import org.apache.spark.{Logging, SparkEnv, TaskContext}
+import org.apache.spark.{Logging, TaskContext}
 
 private[connector] trait OutputMetricsUpdater extends MetricsUpdater {
   def batchFinished(success: Boolean, stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {}
@@ -19,19 +19,10 @@ private[connector] trait OutputMetricsUpdater extends MetricsUpdater {
 }
 
 object OutputMetricsUpdater extends Logging {
-  def detailedMetricsEnabled =
-    SparkEnv.get.conf.getBoolean("spark.cassandra.output.metrics", defaultValue = true)
-
   def apply(taskContext: TaskContext, writeConf: WriteConf): OutputMetricsUpdater = {
     val source = CassandraConnectorSource.instance
 
-    if (detailedMetricsEnabled || writeConf.throttlingEnabled) {
-
-      if (!detailedMetricsEnabled) {
-        logWarning(s"Output metrics updater disabled, but write throughput limiting requested to ${writeConf.throughputMiBPS} MiB/s." +
-          s"Enabling output metrics updater, because it is required by throughput limiting.")
-      }
-
+    if (writeConf.taskMetricsEnabled) {
       val tm = taskContext.taskMetrics()
       if (tm.outputMetrics.isEmpty || tm.outputMetrics.get.writeMethod != DataWriteMethod.Hadoop)
         tm.outputMetrics = Some(new OutputMetrics(DataWriteMethod.Hadoop))

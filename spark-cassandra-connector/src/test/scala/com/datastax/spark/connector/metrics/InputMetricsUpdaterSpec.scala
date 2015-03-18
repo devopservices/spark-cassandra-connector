@@ -1,6 +1,7 @@
 package com.datastax.spark.connector.metrics
 
 import com.datastax.driver.core.RowMock
+import com.datastax.spark.connector.rdd.ReadConf
 import org.apache.spark.executor.{DataReadMethod, InputMetrics, TaskMetrics}
 import org.apache.spark.metrics.CassandraConnectorSource
 import org.apache.spark.{SparkConf, SparkEnv}
@@ -20,7 +21,7 @@ class InputMetricsUpdaterSpec extends FlatSpec with Matchers with BeforeAndAfter
     conf.set("spark.cassandra.input.metrics", "true")
 
     SparkEnv.set(new SparkEnvMock(conf))
-    val updater = InputMetricsUpdater(tc, 3)
+    val updater = InputMetricsUpdater(tc, ReadConf.fromSparkConf(conf), 3)
 
     tc.metrics.inputMetrics.isDefined shouldBe true
     tc.metrics.inputMetrics.get.readMethod shouldBe DataReadMethod.Hadoop
@@ -35,7 +36,7 @@ class InputMetricsUpdaterSpec extends FlatSpec with Matchers with BeforeAndAfter
     conf.set("spark.cassandra.input.metrics", "true")
 
     SparkEnv.set(new SparkEnvMock(conf))
-    val updater = InputMetricsUpdater(tc, 3)
+    val updater = InputMetricsUpdater(tc, ReadConf.fromSparkConf(conf), 3)
 
     tc.metrics.inputMetrics.isDefined shouldBe true
     tc.metrics.inputMetrics.get.readMethod shouldBe DataReadMethod.Hadoop
@@ -50,7 +51,7 @@ class InputMetricsUpdaterSpec extends FlatSpec with Matchers with BeforeAndAfter
     conf.set("spark.cassandra.input.metrics", "true")
 
     SparkEnv.set(new SparkEnvMock(conf))
-    val updater = InputMetricsUpdater(tc, 3)
+    val updater = InputMetricsUpdater(tc, ReadConf.fromSparkConf(conf), 3)
 
     val row = new RowMock(Some(1), Some(2), Some(3), None, Some(4))
     updater.updateMetrics(row)
@@ -73,7 +74,7 @@ class InputMetricsUpdaterSpec extends FlatSpec with Matchers with BeforeAndAfter
     conf.set("spark.cassandra.input.metrics", "false")
 
     SparkEnv.set(new SparkEnvMock(conf))
-    val updater = InputMetricsUpdater(tc, 3)
+    val updater = InputMetricsUpdater(tc, ReadConf.fromSparkConf(conf), 3)
 
     val row = new RowMock(Some(1), Some(2), Some(3), None, Some(4))
     updater.updateMetrics(row)
@@ -88,7 +89,7 @@ class InputMetricsUpdaterSpec extends FlatSpec with Matchers with BeforeAndAfter
     val ccs = new CassandraConnectorSource
     CassandraConnectorSource.instance should not be None
 
-    val updater = InputMetricsUpdater(tc, 3)
+    val updater = InputMetricsUpdater(tc, ReadConf.fromSparkConf(conf), 3)
 
     val row = new RowMock(Some(1), Some(2), Some(3), None, Some(4))
     updater.updateMetrics(row)
@@ -111,7 +112,7 @@ class InputMetricsUpdaterSpec extends FlatSpec with Matchers with BeforeAndAfter
     val conf = new SparkConf(loadDefaults = false)
     SparkEnv.set(new SparkEnvMock(conf))
 
-    val updater = InputMetricsUpdater(tc, 3)
+    val updater = InputMetricsUpdater(tc, ReadConf.fromSparkConf(conf), 3)
     val row = new RowMock(Some(1), Some(2), Some(3), None, Some(4))
     updater.updateMetrics(row)
     updater.updateMetrics(row)

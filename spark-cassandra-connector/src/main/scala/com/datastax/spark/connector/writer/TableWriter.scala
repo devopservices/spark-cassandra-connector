@@ -135,6 +135,7 @@ class TableWriter[T] private (
 
       for (stmtToWrite <- batchBuilder) {
         queryExecutor.executeAsync(stmtToWrite)
+        assert(stmtToWrite.bytesCount > 0)
         rateLimiter.maybeSleep(stmtToWrite.bytesCount)
       }
 

@@ -146,7 +146,7 @@ class CassandraJoinRDD[Left, Right] private[connector](prev: RDD[Left],
     implicit val pv = protocolVersion(session)
     val stmt = session.prepare(singleKeyCqlQuery).setConsistencyLevel(consistencyLevel)
     val bsb = new BoundStatementBuilder[Left](rowWriter, stmt, pv)
-    val metricsUpdater = InputMetricsUpdater(context, 20)
+    val metricsUpdater = InputMetricsUpdater(context, readConf)
     val rowIterator = fetchIterator(session, bsb, prev.iterator(split, context))
     val countingIterator = new CountingIterator(rowIterator, limit)
     context.addTaskCompletionListener { (context) =>

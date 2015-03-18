@@ -1,9 +1,10 @@
 package com.datastax.spark.connector.metrics
 
 import com.datastax.driver.core.Row
+import com.datastax.spark.connector.rdd.ReadConf
+import org.apache.spark.TaskContext
 import org.apache.spark.executor.{DataReadMethod, InputMetrics}
 import org.apache.spark.metrics.CassandraConnectorSource
-import org.apache.spark.{SparkEnv, TaskContext}
 
 private[connector] trait InputMetricsUpdater extends MetricsUpdater {
   /**
@@ -18,13 +19,12 @@ private[connector] trait InputMetricsUpdater extends MetricsUpdater {
 }
 
 object InputMetricsUpdater {
-  def taskMetricsEnabled =
-    SparkEnv.get.conf.getBoolean("spark.cassandra.input.metrics", defaultValue = true)
+  val DefaultGroupSize = 100
 
-  def apply(taskContext: TaskContext, groupSize: Int): InputMetricsUpdater = {
+  def apply(taskContext: TaskContext, readConf: ReadConf, groupSize: Int = DefaultGroupSize): InputMetricsUpdater = {
     val source = CassandraConnectorSource.instance
 
-    if (taskMetricsEnabled) {
+    if (readConf.taskMetricsEnabled) {
       val tm = taskContext.taskMetrics()
       if (tm.inputMetrics.isEmpty || tm.inputMetrics.get.readMethod != DataReadMethod.Hadoop)
         tm.inputMetrics = Some(new InputMetrics(DataReadMethod.Hadoop))
