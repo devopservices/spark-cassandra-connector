@@ -4,7 +4,16 @@ import org.apache.spark.{SparkEnv, SparkConf, SparkContext}
 
 trait SparkTemplate {
   val conf = SparkTemplate.conf
-  val sc = SparkTemplate.sc
+  def sc = SparkTemplate.sc
+
+  def resetSparkContext(conf: SparkConf = conf): Unit = {
+    if (sc != null) {
+      sc.stop()
+    }
+
+    SparkTemplate.sc = new SparkContext(conf)
+  }
+
 }
 
 object SparkTemplate {
@@ -18,8 +27,8 @@ object SparkTemplate {
 
   System.err.println("The Spark configuration is as follows:\n" + conf.toDebugString)
 
-  val sc = new SparkContext(conf)
+  var sc = new SparkContext(conf)
 
-  lazy val actorSystem = SparkEnv.get.actorSystem
+  def actorSystem = SparkEnv.get.actorSystem
 
 }

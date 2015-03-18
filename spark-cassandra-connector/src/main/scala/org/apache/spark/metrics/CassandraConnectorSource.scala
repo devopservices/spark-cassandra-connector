@@ -4,7 +4,7 @@ import com.codahale.metrics
 import org.apache.spark.SparkEnv
 import org.apache.spark.metrics.source.Source
 
-object CassandraConnectorSource extends Source {
+class CassandraConnectorSource extends Source {
   override val sourceName = "cassandra-connector"
 
   override val metricRegistry = new metrics.MetricRegistry
@@ -20,8 +20,25 @@ object CassandraConnectorSource extends Source {
 
   val readByteMeter = metricRegistry.meter("read-byte-meter")
   val readRowMeter = metricRegistry.meter("read-row-meter")
-  val readPageWaitTimer = metricRegistry.timer("read-page-wait-timer")
   val readTaskTimer = metricRegistry.timer("read-task-timer")
 
-  lazy val ensureInitialized = SparkEnv.get.metricsSystem.registerSource(this)
+  CassandraConnectorSource._instance = Some(this)
+  CassandraConnectorSource._env = SparkEnv.get
+}
+
+object CassandraConnectorSource {
+  @volatile
+  private var _instance: Option[CassandraConnectorSource] = None
+  @volatile
+  private var _env: SparkEnv = null
+
+  def instance = {
+    // this simple check allows to control whether the CassandraConnectorSource was created for this
+    // particular SparkEnv. If not - we do not report it as enabled.
+    if (SparkEnv.get != null && SparkEnv.get == _env && !SparkEnv.get.isStopped)
+      _instance
+    else
+      None
+  }
+
 }

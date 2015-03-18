@@ -1,63 +1,29 @@
 package com.datastax.spark.connector.metrics
 
-import java.util.concurrent.{Semaphore, TimeUnit}
+import java.util.concurrent.TimeUnit
 
-import com.datastax.spark.connector.writer.{WriteConf, RichStatement}
+import com.codahale.metrics.Timer.Context
+import com.datastax.spark.connector.writer.{RichStatement, WriteConf}
+import com.google.common.cache.LongAdderBuilder.LongAdderWrapper
 import org.apache.spark.executor.{DataWriteMethod, OutputMetrics}
 import org.apache.spark.metrics.CassandraConnectorSource
 import org.apache.spark.{Logging, SparkEnv, TaskContext}
 
 private[connector] trait OutputMetricsUpdater extends MetricsUpdater {
-  def batchSucceeded(stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long)
+  def batchFinished(success: Boolean, stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {}
 
-  def batchFailed(stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long)
-}
+  private[metrics] def updateTaskMetrics(success: Boolean, dataLength: Int): Unit = {}
 
-private class DetailedOutputMetricsUpdater(outputMetrics: OutputMetrics) extends OutputMetricsUpdater {
-  private val mutex = new Semaphore(1)
-  private val taskTimer = CassandraConnectorSource.writeTaskTimer.time()
+  private[metrics] def updateCodahaleMetrics(success: Boolean, count: Int, dataLength: Int, submissionTimestamp: Long, executionTimestamp: Long): Unit = {}
 
-  def batchSucceeded(stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {
-    val t = System.nanoTime()
-    CassandraConnectorSource.writeBatchTimer.update(t - executionTimestamp, TimeUnit.NANOSECONDS)
-    CassandraConnectorSource.writeBatchWaitTimer.update(executionTimestamp - submissionTimestamp, TimeUnit.NANOSECONDS)
-    CassandraConnectorSource.writeRowMeter.mark(stmt.rowsCount)
-    CassandraConnectorSource.writeByteMeter.mark(stmt.bytesCount)
-    CassandraConnectorSource.writeSuccessCounter.inc()
-    mutex.acquire()
-    outputMetrics.bytesWritten += stmt.bytesCount
-    mutex.release()
-  }
-
-  def batchFailed(stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {
-    CassandraConnectorSource.writeFailureCounter.inc()
-  }
-
-  def finish(): Long = {
-    val t = taskTimer.stop()
-    forceReport()
-    t
-  }
-}
-
-private class DummyOutputMetricsUpdater extends OutputMetricsUpdater {
-  private val taskTimer = System.nanoTime()
-
-  def batchSucceeded(stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {}
-
-  def batchFailed(stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {}
-
-  def finish(): Long = {
-    System.nanoTime() - taskTimer
-  }
 }
 
 object OutputMetricsUpdater extends Logging {
-  lazy val detailedMetricsEnabled =
+  def detailedMetricsEnabled =
     SparkEnv.get.conf.getBoolean("spark.cassandra.output.metrics", defaultValue = true)
 
   def apply(taskContext: TaskContext, writeConf: WriteConf): OutputMetricsUpdater = {
-    CassandraConnectorSource.ensureInitialized
+    val source = CassandraConnectorSource.instance
 
     if (detailedMetricsEnabled || writeConf.throttlingEnabled) {
 
@@ -70,10 +36,78 @@ object OutputMetricsUpdater extends Logging {
       if (tm.outputMetrics.isEmpty || tm.outputMetrics.get.writeMethod != DataWriteMethod.Hadoop)
         tm.outputMetrics = Some(new OutputMetrics(DataWriteMethod.Hadoop))
 
-      new DetailedOutputMetricsUpdater(tm.outputMetrics.get)
+      if (source.isDefined)
+        new CodahaleAndTaskMetricsUpdater(source.get, tm.outputMetrics.get)
+      else
+        new TaskMetricsUpdater(tm.outputMetrics.get)
+
     } else {
-      new DummyOutputMetricsUpdater()
+      if (source.isDefined)
+        new CodahaleMetricsUpdater(source.get)
+      else
+        new DummyOutputMetricsUpdater
     }
+  }
+
+  private abstract class BaseOutputMetricsUpdater
+    extends OutputMetricsUpdater with Timer {
+
+    override def batchFinished(success: Boolean, stmt: RichStatement, submissionTimestamp: Long, executionTimestamp: Long): Unit = {
+      val dataLength = stmt.bytesCount
+      updateTaskMetrics(success, dataLength)
+      updateCodahaleMetrics(success, stmt.rowsCount, dataLength, submissionTimestamp, executionTimestamp)
+    }
+
+    def finish(): Long = stopTimer()
+  }
+
+  private trait TaskMetricsSupport extends OutputMetricsUpdater {
+    val outputMetrics: OutputMetrics
+
+    val atomicCounter = new LongAdderWrapper
+    atomicCounter.add(outputMetrics.bytesWritten)
+
+    override private[metrics] def updateTaskMetrics(success: Boolean, dataLength: Int): Unit = {
+      if (success) {
+        atomicCounter.add(dataLength)
+        outputMetrics.bytesWritten = atomicCounter.longValue()
+      }
+    }
+  }
+
+  private trait CodahaleMetricsSupport extends OutputMetricsUpdater {
+    val source: CassandraConnectorSource
+
+    override private[metrics] def updateCodahaleMetrics(success: Boolean, count: Int, dataLength: Int, submissionTimestamp: Long, executionTimestamp: Long): Unit = {
+      if (success) {
+        val t = System.nanoTime()
+        source.writeBatchTimer.update(t - executionTimestamp, TimeUnit.NANOSECONDS)
+        source.writeBatchWaitTimer.update(executionTimestamp - submissionTimestamp, TimeUnit.NANOSECONDS)
+        source.writeRowMeter.mark(count)
+        source.writeByteMeter.mark(dataLength)
+        source.writeSuccessCounter.inc()
+
+      } else {
+        source.writeFailureCounter.inc()
+      }
+    }
+
+    val timer: Context = source.writeTaskTimer.time()
+  }
+
+  private class DummyOutputMetricsUpdater extends OutputMetricsUpdater with SimpleTimer {
+    def finish(): Long = stopTimer()
+  }
+
+  private class TaskMetricsUpdater(val outputMetrics: OutputMetrics)
+    extends BaseOutputMetricsUpdater with TaskMetricsSupport with SimpleTimer {
+  }
+
+  private class CodahaleMetricsUpdater(val source: CassandraConnectorSource)
+    extends BaseOutputMetricsUpdater with CodahaleMetricsSupport with CCSTimer
+
+  private class CodahaleAndTaskMetricsUpdater(val source: CassandraConnectorSource, val outputMetrics: OutputMetrics)
+    extends BaseOutputMetricsUpdater with TaskMetricsSupport with CodahaleMetricsSupport with CCSTimer {
   }
 
 }

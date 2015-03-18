@@ -1,80 +1,112 @@
 package com.datastax.spark.connector.metrics
 
-import com.codahale.metrics.Timer
 import com.datastax.driver.core.Row
-import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.executor.{DataReadMethod, InputMetrics}
 import org.apache.spark.metrics.CassandraConnectorSource
+import org.apache.spark.{SparkEnv, TaskContext}
 
 private[connector] trait InputMetricsUpdater extends MetricsUpdater {
-  def resultSetFetchTimer: Option[Timer]
-
-  def updateMetrics(row: Row): Row
-}
-
-private class DetailedInputMetricsUpdater(metrics: InputMetrics, groupSize: Int) extends InputMetricsUpdater {
-  require(groupSize > 0)
-
-  val resultSetFetchTimer = Some(CassandraConnectorSource.readPageWaitTimer)
-
-  private val taskTimer = CassandraConnectorSource.readTaskTimer.time()
-
-  private var cnt = 0
-  private var dataLength = metrics.bytesRead
-
-  def updateMetrics(row: Row): Row = {
-    for (i <- 0 until row.getColumnDefinitions.size() if !row.isNull(i))
-      metrics.bytesRead += row.getBytesUnsafe(i).remaining()
-
-    cnt += 1
-    if (cnt == groupSize)
-      update()
-    row
-  }
-
-  @inline
-  private def update(): Unit = {
-    CassandraConnectorSource.readRowMeter.mark(cnt)
-    CassandraConnectorSource.readByteMeter.mark(metrics.bytesRead - dataLength)
-    dataLength = metrics.bytesRead
-    cnt = 0
-  }
-
-  def finish(): Long = {
-    update()
-    val t = taskTimer.stop()
-    forceReport()
-    t
-  }
-}
-
-private class DummyInputMetricsUpdater extends InputMetricsUpdater {
-  private val taskTimer = System.nanoTime()
-
-  val resultSetFetchTimer = None
-
+  /**
+   * This methods is not thread-safe.
+   */
   def updateMetrics(row: Row): Row = row
 
-  def finish(): Long = {
-    System.nanoTime() - taskTimer
-  }
+  private[metrics] def updateTaskMetrics(dataLength: Int): Unit = {}
+
+  private[metrics] def updateCodahaleMetrics(count: Int, dataLength: Int): Unit = {}
+
 }
 
 object InputMetricsUpdater {
-  lazy val detailedMetricsEnabled =
+  def taskMetricsEnabled =
     SparkEnv.get.conf.getBoolean("spark.cassandra.input.metrics", defaultValue = true)
 
   def apply(taskContext: TaskContext, groupSize: Int): InputMetricsUpdater = {
-    CassandraConnectorSource.ensureInitialized
+    val source = CassandraConnectorSource.instance
 
-    if (detailedMetricsEnabled) {
+    if (taskMetricsEnabled) {
       val tm = taskContext.taskMetrics()
       if (tm.inputMetrics.isEmpty || tm.inputMetrics.get.readMethod != DataReadMethod.Hadoop)
         tm.inputMetrics = Some(new InputMetrics(DataReadMethod.Hadoop))
 
-      new DetailedInputMetricsUpdater(tm.inputMetrics.get, groupSize)
+      if (source.isDefined)
+        new CodahaleAndTaskMetricsUpdater(groupSize, source.get, tm.inputMetrics.get)
+      else
+        new TaskMetricsUpdater(groupSize, tm.inputMetrics.get)
+
     } else {
-      new DummyInputMetricsUpdater
+      if (source.isDefined)
+        new CodahaleMetricsUpdater(groupSize, source.get)
+      else
+        new DummyInputMetricsUpdater()
     }
   }
+
+  private abstract class CumulativeInputMetricsUpdater(groupSize: Int)
+    extends InputMetricsUpdater with Timer {
+    require(groupSize > 0)
+
+    private var cnt = 0
+    private var dataLength = 0
+
+    override def updateMetrics(row: Row): Row = {
+      var rowLength = 0
+      for (i <- 0 until row.getColumnDefinitions.size() if !row.isNull(i))
+        rowLength += row.getBytesUnsafe(i).remaining()
+
+      // updating task metrics is cheap
+      updateTaskMetrics(rowLength)
+
+      cnt += 1
+      dataLength += rowLength
+      if (cnt == groupSize) {
+        // this is not that cheap because Codahale metrics are thread-safe
+        updateCodahaleMetrics(cnt, dataLength)
+        cnt = 0
+        dataLength = 0
+      }
+      row
+    }
+
+    def finish(): Long = {
+      updateCodahaleMetrics(cnt, dataLength)
+      val t = stopTimer()
+      t
+    }
+  }
+
+  private class DummyInputMetricsUpdater extends InputMetricsUpdater with SimpleTimer {
+    def finish(): Long = stopTimer()
+  }
+
+  private trait CodahaleMetricsSupport extends InputMetricsUpdater {
+    val source: CassandraConnectorSource
+
+    @inline
+    override def updateCodahaleMetrics(count: Int, dataLength: Int): Unit = {
+      source.readByteMeter.mark(dataLength)
+      source.readRowMeter.mark(count)
+    }
+
+    val timer = source.readTaskTimer.time()
+  }
+
+  private trait TaskMetricsSupport extends InputMetricsUpdater {
+    val inputMetrics: InputMetrics
+
+    @inline
+    override def updateTaskMetrics(dataLength: Int): Unit = inputMetrics.bytesRead += dataLength
+  }
+
+  private class TaskMetricsUpdater(groupSize: Int, val inputMetrics: InputMetrics)
+    extends CumulativeInputMetricsUpdater(groupSize) with TaskMetricsSupport with SimpleTimer {
+  }
+
+  private class CodahaleMetricsUpdater(groupSize: Int, val source: CassandraConnectorSource)
+    extends CumulativeInputMetricsUpdater(groupSize) with CodahaleMetricsSupport with CCSTimer
+
+  private class CodahaleAndTaskMetricsUpdater(groupSize: Int, val source: CassandraConnectorSource, val inputMetrics: InputMetrics)
+    extends CumulativeInputMetricsUpdater(groupSize) with TaskMetricsSupport with CodahaleMetricsSupport with CCSTimer {
+  }
+
 }

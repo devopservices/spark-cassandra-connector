@@ -128,9 +128,7 @@ class CassandraTableScanRDD[R] private[connector](
 
     try {
       implicit val pv = protocolVersion(session)
-      val tc = inputMetricsUpdater.resultSetFetchTimer.map(_.time())
       val rs = session.execute(stmt)
-      tc.map(_.stop())
       val iterator = new PrefetchingResultSetIterator(rs, fetchSize)
       val iteratorWithMetrics = iterator.map(inputMetricsUpdater.updateMetrics)
       val result = iteratorWithMetrics.map(rowReader.read(_, columnNamesArray))
