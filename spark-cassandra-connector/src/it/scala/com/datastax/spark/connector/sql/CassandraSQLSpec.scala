@@ -8,6 +8,8 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class CassandraSQLSpec extends FlatSpec with Matchers with SharedEmbeddedCassandra with SparkTemplate {
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
+
   val conn = CassandraConnector(Set(cassandraHost))
   val cc = new CassandraSQLContext(sc)
   cc.setKeyspace("sql_test")

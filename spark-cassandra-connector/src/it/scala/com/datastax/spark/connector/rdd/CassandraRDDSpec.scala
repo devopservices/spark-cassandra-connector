@@ -45,6 +45,8 @@ class SubKeyValue extends SuperKeyValue {
 class CassandraRDDSpec extends FlatSpec with Matchers with SharedEmbeddedCassandra with SparkTemplate {
 
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
+
   val conn = CassandraConnector(Set(cassandraHost))
   val bigTableRowCount = 100000
 

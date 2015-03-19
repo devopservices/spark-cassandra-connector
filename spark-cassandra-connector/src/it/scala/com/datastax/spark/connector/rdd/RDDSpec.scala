@@ -25,6 +25,7 @@ case class DataCol(pk1: Int, pk2: Int, pk3: Int, d1: Int)
 class RDDSpec extends FlatSpec with Matchers with SharedEmbeddedCassandra with SparkTemplate {
 
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
 
   val conn = CassandraConnector(Set(cassandraHost))
   implicit val protocolVersion = conn.withClusterDo(_.getConfiguration.getProtocolOptions.getProtocolVersionEnum)

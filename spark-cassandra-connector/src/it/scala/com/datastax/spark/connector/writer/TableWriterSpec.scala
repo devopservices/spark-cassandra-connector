@@ -30,6 +30,8 @@ class SubKeyValue(k: Int, v: String, val group: Long) extends SuperKeyValue(k, v
 class TableWriterSpec extends FlatSpec with Matchers with BeforeAndAfter with SharedEmbeddedCassandra with SparkTemplate {
 
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
+
   val conn = CassandraConnector(Set(cassandraHost))
 
   conn.withSessionDo { session =>

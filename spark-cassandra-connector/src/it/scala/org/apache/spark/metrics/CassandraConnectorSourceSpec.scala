@@ -5,19 +5,15 @@ import java.io.File
 import com.datastax.spark.connector.embedded.SparkTemplate
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkConf
-import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
+import org.scalatest.{FlatSpec, Matchers}
 
-class CassandraConnectorSourceSpec extends FlatSpec with Matchers with BeforeAndAfter with SparkTemplate {
+class CassandraConnectorSourceSpec extends FlatSpec with Matchers with SparkTemplate {
 
   def prepareConf = {
-    new SparkConf(loadDefaults = false)
+    val conf = new SparkConf(loadDefaults = false)
     conf.setMaster("local[*]")
     conf.setAppName("test")
     conf
-  }
-
-  after {
-    resetSparkContext()
   }
 
   "CassandraConnectorSource" should "be initialized when it was specified in metrics properties" in {
@@ -34,7 +30,7 @@ class CassandraConnectorSourceSpec extends FlatSpec with Matchers with BeforeAnd
 
     val conf = prepareConf
     conf.set("spark.metrics.conf", metricsPropertiesFile.getAbsolutePath)
-    resetSparkContext(conf)
+    useSparkConf(conf)
     try {
       CassandraConnectorSource.instance.isDefined shouldBe true
     } finally {
@@ -56,7 +52,7 @@ class CassandraConnectorSourceSpec extends FlatSpec with Matchers with BeforeAnd
     val conf = prepareConf
     conf.set("spark.metrics.conf", metricsPropertiesFile.getAbsolutePath)
 
-    resetSparkContext(conf)
+    useSparkConf(conf)
     try {
       CassandraConnectorSource.instance.isDefined shouldBe false
     } finally {

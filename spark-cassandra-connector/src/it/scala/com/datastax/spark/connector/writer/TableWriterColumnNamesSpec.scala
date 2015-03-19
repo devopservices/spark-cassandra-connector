@@ -9,6 +9,8 @@ import com.datastax.spark.connector._
 class TableWriterColumnNamesSpec extends AbstractSpec with SharedEmbeddedCassandra with SparkTemplate {
 
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
+
   val conn = CassandraConnector(Set(cassandraHost))
 
   case class KeyValue(key: Int, group: Long)

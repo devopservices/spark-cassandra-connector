@@ -18,6 +18,7 @@ class CassandraJavaPairRDDSpec extends FlatSpec with Matchers with BeforeAndAfte
 with ShouldMatchers with SharedEmbeddedCassandra with SparkTemplate {
 
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
 
   val conn = CassandraConnector(Set(EmbeddedCassandra.cassandraHost))
 

@@ -8,6 +8,8 @@ import org.scalatest.{FlatSpec, Matchers}
 class CassandraPartitionKeyWhereSpec extends FlatSpec with Matchers with SharedEmbeddedCassandra with SparkTemplate {
 
   useCassandraConfig("cassandra-default.yaml.template")
+  useSparkConf()
+
   val conn = CassandraConnector(Set(cassandraHost))
 
   conn.withSessionDo { session =>
